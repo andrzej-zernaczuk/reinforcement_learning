@@ -1,10 +1,18 @@
+"""Advanced 3D visualization tool for RL agent value functions and policies.
+
+This module creates 3D surface plots of value functions, Q-values, and policy
+probabilities for trained Double Q-learning and A2C-GAE agents. Useful for
+understanding how agents evaluate different game states.
+"""
+
 import argparse
 import pickle
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 import torch
 
 from src.a2c_gae import A2CConfig, A2CGAEAgent
@@ -12,208 +20,302 @@ from src.doubleq import DoubleQAgent, DoubleQConfig
 from src.features import OBS_DIM, obs_to_onehot
 
 
-def make_surface_data(df: pd.DataFrame, value_col: str):
-    xs = np.array(sorted(df["player_sum"].unique()))
-    ys = np.array(sorted(df["dealer_card"].unique()))
-    Z = np.full((xs.size, ys.size), np.nan, dtype=float)
-    lut = {
-        (int(r.player_sum), int(r.dealer_card)): float(r[value_col])
-        for _, r in df.iterrows()
+def make_surface_data(
+    dataframe: pd.DataFrame, value_column: str
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Create meshgrid data for 3D surface plotting.
+
+    Converts a DataFrame with player_sum and dealer_card columns into
+    meshgrid format suitable for matplotlib 3D surface plots.
+
+    Args:
+        dataframe: DataFrame containing player_sum, dealer_card, and value columns.
+        value_column: Name of the column to use for Z-axis values.
+
+    Returns:
+        Tuple of (X, Y, Z) meshgrid arrays where:
+            - X: Dealer card values (meshgrid)
+            - Y: Player sum values (meshgrid)
+            - Z: Value function values (meshgrid)
+    """
+    player_sums = np.array(sorted(dataframe["player_sum"].unique()))
+    dealer_cards = np.array(sorted(dataframe["dealer_card"].unique()))
+    z_values = np.full((player_sums.size, dealer_cards.size), np.nan, dtype=float)
+
+    # Create lookup table for fast access
+    lookup_table = {
+        (int(row.player_sum), int(row.dealer_card)): float(row[value_column])
+        for _, row in dataframe.iterrows()
     }
-    for i, x in enumerate(xs):
-        for j, y in enumerate(ys):
-            Z[i, j] = lut.get((int(x), int(y)), np.nan)
-    X, Y = np.meshgrid(ys, xs)
-    return X, Y, Z
+
+    # Fill Z values
+    for row_index, player_sum in enumerate(player_sums):
+        for col_index, dealer_card in enumerate(dealer_cards):
+            z_values[row_index, col_index] = lookup_table.get(
+                (int(player_sum), int(dealer_card)), np.nan
+            )
+
+    x_mesh, y_mesh = np.meshgrid(dealer_cards, player_sums)
+    return x_mesh, y_mesh, z_values
 
 
 def plot_surface(
-    df: pd.DataFrame,
+    dataframe: pd.DataFrame,
     usable_ace: bool,
-    value_col: str,
+    value_column: str,
     title: str,
-    outpath: str,
-    invert_x=True,
-):
-    d = df[df["usable_ace"] == usable_ace].copy()
-    d = d[(d["player_sum"] >= 12) & (d["player_sum"] <= 21)]
-    X, Y, Z = make_surface_data(d, value_col=value_col)
+    output_path: str,
+    invert_x_axis: bool = True,
+) -> None:
+    """Create and save a 3D surface plot of value function.
 
-    fig = plt.figure(figsize=(7, 5))
-    ax = fig.add_subplot(111, projection="3d")
-    ax.plot_surface(X, Y, Z, linewidth=0, antialiased=True)
+    Args:
+        dataframe: DataFrame containing state-value data.
+        usable_ace: Whether to plot for usable_ace=True or False states.
+        value_column: Name of column to plot on Z-axis (e.g., "V", "Q_hit").
+        title: Title for the plot.
+        output_path: Path where the figure will be saved.
+        invert_x_axis: If True, invert the Y-axis (player_sum) for better viewing.
+    """
+    # Filter for specific usable_ace value and relevant player sums
+    filtered_data = dataframe[dataframe["usable_ace"] == usable_ace].copy()
+    filtered_data = filtered_data[
+        (filtered_data["player_sum"] >= 12) & (filtered_data["player_sum"] <= 21)
+    ]
 
-    ax.set_xlabel("dealer_showing")
-    ax.set_ylabel("player_sum")
-    ax.set_zlabel(value_col)
-    ax.set_title(f"{title} | usable_ace={usable_ace}")
-    if invert_x:
-        ax.invert_yaxis()
+    x_mesh, y_mesh, z_values = make_surface_data(filtered_data, value_column=value_column)
 
-    fig.tight_layout()
-    fig.savefig(outpath, dpi=160)
-    plt.close(fig)
+    figure = plt.figure(figsize=(7, 5))
+    axis = figure.add_subplot(111, projection="3d")
+    axis.plot_surface(x_mesh, y_mesh, z_values, linewidth=0, antialiased=True)
+
+    axis.set_xlabel("dealer_showing")
+    axis.set_ylabel("player_sum")
+    axis.set_zlabel(value_column)
+    axis.set_title(f"{title} | usable_ace={usable_ace}")
+
+    if invert_x_axis:
+        axis.invert_yaxis()
+
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=160)
+    plt.close(figure)
 
 
-def plot_epsilon(cfg: DoubleQConfig, outpath: str, episodes=200000):
-    eps = []
-    for ep in range(episodes + 1):
-        if cfg.eps_decay_episodes <= 0:
-            e = cfg.eps_end
+def plot_epsilon(
+    config: DoubleQConfig, output_path: str, episodes: int = 200000
+) -> None:
+    """Plot epsilon decay schedule for Double Q-learning.
+
+    Args:
+        config: Double Q-learning configuration containing epsilon parameters.
+        output_path: Path where the figure will be saved.
+        episodes: Number of episodes to plot (default 200,000).
+    """
+    epsilon_values = []
+
+    for episode_num in range(episodes + 1):
+        if config.eps_decay_episodes <= 0:
+            epsilon = config.eps_end
         else:
-            frac = min(1.0, ep / float(cfg.eps_decay_episodes))
-            e = cfg.eps_start + frac * (cfg.eps_end - cfg.eps_start)
-        eps.append(e)
+            decay_fraction = min(1.0, episode_num / float(config.eps_decay_episodes))
+            epsilon = config.eps_start + decay_fraction * (config.eps_end - config.eps_start)
+        epsilon_values.append(epsilon)
 
-    fig = plt.figure(figsize=(7, 4))
-    ax = fig.add_subplot(111)
-    ax.plot(np.arange(episodes + 1), eps)
-    ax.set_xlabel("episode")
-    ax.set_ylabel("epsilon")
-    ax.set_title("Epsilon schedule (DoubleQ)")
-    fig.tight_layout()
-    fig.savefig(outpath, dpi=160)
-    plt.close(fig)
+    figure = plt.figure(figsize=(7, 4))
+    axis = figure.add_subplot(111)
+    axis.plot(np.arange(episodes + 1), epsilon_values)
+    axis.set_xlabel("episode")
+    axis.set_ylabel("epsilon")
+    axis.set_title("Epsilon schedule (DoubleQ)")
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=160)
+    plt.close(figure)
 
 
-def build_doubleq_df(ckpt_path: str):
-    with open(ckpt_path, "rb") as f:
-        ckpt = pickle.load(f)
+def build_doubleq_df(checkpoint_path: str) -> tuple[pd.DataFrame, DoubleQConfig]:
+    """Build DataFrame of Q-values and V-values from Double Q-learning checkpoint.
 
-    cfg = DoubleQConfig(**ckpt["cfg"])
-    agent = DoubleQAgent(n_actions=ckpt["n_actions"], cfg=cfg, seed=0)
-    agent.QA.update(ckpt["QA"])
-    agent.QB.update(ckpt["QB"])
+    Loads a saved Double Q-learning agent and extracts Q-values for all
+    relevant state-action pairs.
+
+    Args:
+        checkpoint_path: Path to the pickled checkpoint file.
+
+    Returns:
+        Tuple of (DataFrame with Q-values and V-values, agent config).
+    """
+    with open(checkpoint_path, "rb") as file_handle:
+        checkpoint = pickle.load(file_handle)
+
+    config = DoubleQConfig(**checkpoint["config"])
+    agent = DoubleQAgent(num_actions=checkpoint["num_actions"], config=config, seed=0)
+    agent.q_table_a.update(checkpoint["q_table_a"])
+    agent.q_table_b.update(checkpoint["q_table_b"])
 
     rows = []
-    for usable in [False, True]:
-        for ps in range(4, 22):
-            for dc in range(1, 11):
-                s = (ps, dc, usable)
-                qa = agent.QA[s]
-                qb = agent.QB[s]
-                q = (qa + qb) / 2.0
+    for usable_ace in [False, True]:
+        for player_sum in range(4, 22):
+            for dealer_card in range(1, 11):
+                state = (player_sum, dealer_card, usable_ace)
+                q_values_a = agent.q_table_a[state]
+                q_values_b = agent.q_table_b[state]
+                # Average Q-values from both tables
+                q_values_avg = (q_values_a + q_values_b) / 2.0
+
                 rows.append(
                     {
-                        "player_sum": ps,
-                        "dealer_card": dc,
-                        "usable_ace": usable,
-                        "Q_stick": float(q[0]),
-                        "Q_hit": float(q[1]),
-                        "V": float(np.max(q)),
+                        "player_sum": player_sum,
+                        "dealer_card": dealer_card,
+                        "usable_ace": usable_ace,
+                        "Q_stick": float(q_values_avg[0]),
+                        "Q_hit": float(q_values_avg[1]),
+                        "V": float(np.max(q_values_avg)),
                     }
                 )
-    return pd.DataFrame(rows), cfg
+
+    return pd.DataFrame(rows), config
 
 
-def build_a2c_df(ckpt_path: str, cfg: A2CConfig):
-    agent = A2CGAEAgent(obs_dim=OBS_DIM, n_actions=2, cfg=cfg, seed=0)
-    agent.load(ckpt_path)
+def build_a2c_df(checkpoint_path: str, config: A2CConfig) -> pd.DataFrame:
+    """Build DataFrame of value and policy from A2C-GAE checkpoint.
 
-    net = getattr(agent, "net", None)
-    if net is None:
-        raise AttributeError("Could not find agent.net on A2CGAEAgent")
+    Loads a saved A2C-GAE agent and extracts value estimates and policy
+    probabilities for all relevant states.
 
-    net.eval()
-    device = getattr(net, "device", None)
-    if device is None:
-        device = (
-            torch.device(cfg.device) if hasattr(cfg, "device") else torch.device("cpu")
+    Args:
+        checkpoint_path: Path to the saved agent checkpoint.
+        config: A2C configuration for loading the agent.
+
+    Returns:
+        DataFrame with V-values and policy probabilities.
+    """
+    agent = A2CGAEAgent(obs_dim=OBS_DIM, num_actions=2, config=config, seed=0)
+    agent.load(checkpoint_path)
+
+    network = getattr(agent, "actor_critic_network", None)
+    if network is None:
+        raise AttributeError("Could not find agent.actor_critic_network on A2CGAEAgent")
+
+    network.eval()
+    device_obj = getattr(network, "device", None)
+    if device_obj is None:
+        device_obj = (
+            torch.device(config.device) if hasattr(config, "device") else torch.device("cpu")
         )
 
     rows = []
-    for usable in [False, True]:
-        for ps in range(4, 22):
-            for dc in range(1, 11):
-                obs = (ps, dc, int(usable))
-                x = obs_to_onehot(obs)
+    for usable_ace in [False, True]:
+        for player_sum in range(4, 22):
+            for dealer_card in range(1, 11):
+                observation = (player_sum, dealer_card, usable_ace)
+                observation_encoded = obs_to_onehot(observation)
 
-                x_t = torch.as_tensor(x, dtype=torch.float32, device=device).unsqueeze(
-                    0
-                )
+                observation_tensor = torch.as_tensor(
+                    observation_encoded, dtype=torch.float32, device=device_obj
+                ).unsqueeze(0)
 
-                out = net(x_t)
-                if isinstance(out, tuple) and len(out) == 2:
-                    logits, val = out
-                elif isinstance(out, dict):
-                    logits = out.get(
-                        "logits", out.get("pi_logits", out.get("policy_logits"))
+                network_output = network(observation_tensor)
+
+                if isinstance(network_output, tuple) and len(network_output) == 2:
+                    policy_logits, value_estimate = network_output
+                elif isinstance(network_output, dict):
+                    policy_logits = network_output.get(
+                        "logits", network_output.get("pi_logits", network_output.get("policy_logits"))
                     )
-                    val = out.get("value", out.get("v"))
-                    if logits is None or val is None:
+                    value_estimate = network_output.get("value", network_output.get("v"))
+                    if policy_logits is None or value_estimate is None:
                         raise ValueError(
-                            f"Unexpected net dict keys: {list(out.keys())}"
+                            f"Unexpected network dict keys: {list(network_output.keys())}"
                         )
                 else:
-                    raise ValueError("Unexpected net output type/format")
+                    raise ValueError("Unexpected network output type/format")
 
-                probs = torch.softmax(logits, dim=-1).detach().cpu().numpy().reshape(-1)
+                policy_probs = (
+                    torch.softmax(policy_logits, dim=-1).detach().cpu().numpy().reshape(-1)
+                )
 
                 rows.append(
                     {
-                        "player_sum": ps,
-                        "dealer_card": dc,
-                        "usable_ace": usable,
-                        "V": float(val.detach().cpu().item()),
-                        "pi_hit": float(probs[1]),
-                        "pi_stick": float(probs[0]),
+                        "player_sum": player_sum,
+                        "dealer_card": dealer_card,
+                        "usable_ace": usable_ace,
+                        "V": float(value_estimate.detach().cpu().item()),
+                        "pi_hit": float(policy_probs[1]),
+                        "pi_stick": float(policy_probs[0]),
                     }
                 )
 
     return pd.DataFrame(rows)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--algo", choices=["doubleq", "a2c"], required=True)
-    ap.add_argument("--checkpoint", type=str, required=True)
-    ap.add_argument("--outdir", type=str, default="viz_class")
-    ap.add_argument("--device", type=str, default="cpu")
-    args = ap.parse_args()
+def main() -> None:
+    """Main entry point for the visualization script.
 
-    outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    Parses command-line arguments, loads agent checkpoints, and generates
+    3D surface plots of value functions and policies.
+    """
+    argument_parser = argparse.ArgumentParser()
+    argument_parser.add_argument("--algo", choices=["doubleq", "a2c"], required=True)
+    argument_parser.add_argument("--checkpoint", type=str, required=True)
+    argument_parser.add_argument("--outdir", type=str, default="viz_class")
+    argument_parser.add_argument("--device", type=str, default="cpu")
+    args = argument_parser.parse_args()
+
+    output_directory = Path(args.outdir)
+    output_directory.mkdir(parents=True, exist_ok=True)
 
     if args.algo == "doubleq":
-        df, cfg = build_doubleq_df(args.checkpoint)
-        plot_surface(
-            df, False, "V", "DoubleQ: V(s)", str(outdir / "doubleq_V_false.png")
-        )
-        plot_surface(df, True, "V", "DoubleQ: V(s)", str(outdir / "doubleq_V_true.png"))
-        plot_surface(
-            df,
-            False,
-            "Q_stick",
-            "DoubleQ: Q(s,stick)",
-            str(outdir / "doubleq_Qstick_false.png"),
-        )
-        plot_surface(
-            df,
-            True,
-            "Q_stick",
-            "DoubleQ: Q(s,stick)",
-            str(outdir / "doubleq_Qstick_true.png"),
-        )
-        plot_surface(
-            df,
-            False,
-            "Q_hit",
-            "DoubleQ: Q(s,hit)",
-            str(outdir / "doubleq_Qhit_false.png"),
-        )
-        plot_surface(
-            df,
-            True,
-            "Q_hit",
-            "DoubleQ: Q(s,hit)",
-            str(outdir / "doubleq_Qhit_true.png"),
-        )
-        plot_epsilon(cfg, str(outdir / "doubleq_epsilon.png"), episodes=200000)
+        dataframe, config = build_doubleq_df(args.checkpoint)
 
-        df.to_csv(outdir / "doubleq_values.csv", index=False)
+        # Plot value function surfaces
+        plot_surface(
+            dataframe, False, "V", "DoubleQ: V(s)", str(output_directory / "doubleq_V_false.png")
+        )
+        plot_surface(
+            dataframe, True, "V", "DoubleQ: V(s)", str(output_directory / "doubleq_V_true.png")
+        )
+
+        # Plot Q(s, stick) surfaces
+        plot_surface(
+            dataframe,
+            False,
+            "Q_stick",
+            "DoubleQ: Q(s,stick)",
+            str(output_directory / "doubleq_Qstick_false.png"),
+        )
+        plot_surface(
+            dataframe,
+            True,
+            "Q_stick",
+            "DoubleQ: Q(s,stick)",
+            str(output_directory / "doubleq_Qstick_true.png"),
+        )
+
+        # Plot Q(s, hit) surfaces
+        plot_surface(
+            dataframe,
+            False,
+            "Q_hit",
+            "DoubleQ: Q(s,hit)",
+            str(output_directory / "doubleq_Qhit_false.png"),
+        )
+        plot_surface(
+            dataframe,
+            True,
+            "Q_hit",
+            "DoubleQ: Q(s,hit)",
+            str(output_directory / "doubleq_Qhit_true.png"),
+        )
+
+        # Plot epsilon decay schedule
+        plot_epsilon(config, str(output_directory / "doubleq_epsilon.png"), episodes=200000)
+
+        # Save raw data
+        dataframe.to_csv(output_directory / "doubleq_values.csv", index=False)
 
     else:
-        cfg = A2CConfig(
+        a2c_config = A2CConfig(
             lr=0.0010948770705738267,
             gamma=0.95,
             gae_lambda=0.97,
@@ -221,23 +323,37 @@ def main():
             hidden_sizes=(64, 64),
             device=args.device,
         )
-        df = build_a2c_df(args.checkpoint, cfg)
-        plot_surface(df, False, "V", "A2C-GAE: V(s)", str(outdir / "a2c_V_false.png"))
-        plot_surface(df, True, "V", "A2C-GAE: V(s)", str(outdir / "a2c_V_true.png"))
+
+        dataframe = build_a2c_df(args.checkpoint, a2c_config)
+
+        # Plot value function surfaces
         plot_surface(
-            df,
+            dataframe, False, "V", "A2C-GAE: V(s)", str(output_directory / "a2c_V_false.png")
+        )
+        plot_surface(
+            dataframe, True, "V", "A2C-GAE: V(s)", str(output_directory / "a2c_V_true.png")
+        )
+
+        # Plot policy probability surfaces
+        plot_surface(
+            dataframe,
             False,
             "pi_hit",
             "A2C-GAE: π(hit|s)",
-            str(outdir / "a2c_pi_hit_false.png"),
+            str(output_directory / "a2c_pi_hit_false.png"),
         )
         plot_surface(
-            df, True, "pi_hit", "A2C-GAE: π(hit|s)", str(outdir / "a2c_pi_hit_true.png")
+            dataframe,
+            True,
+            "pi_hit",
+            "A2C-GAE: π(hit|s)",
+            str(output_directory / "a2c_pi_hit_true.png"),
         )
 
-        df.to_csv(outdir / "a2c_values.csv", index=False)
+        # Save raw data
+        dataframe.to_csv(output_directory / "a2c_values.csv", index=False)
 
-    print(f"Saved figures to: {outdir}")
+    print(f"Saved figures to: {output_directory}")
 
 
 if __name__ == "__main__":
