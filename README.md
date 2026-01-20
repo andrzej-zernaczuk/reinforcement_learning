@@ -12,13 +12,7 @@ This project explores reward shaping strategies and provides systematic hyperpar
 This project uses [uv](https://github.com/astral-sh/uv) for fast, reliable Python package management. Install uv first:
 
 ```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# Alternative: via pip
+# Install via pip
 pip install uv
 ```
 
@@ -27,9 +21,6 @@ pip install uv
 ```bash
 # Install dependencies (creates virtual environment automatically)
 uv sync
-
-# Verify installation
-uv run python -c "import gymnasium; print('Ready!')"
 ```
 
 The project requires Python 3.13+ and will automatically install all dependencies including:
@@ -65,24 +56,24 @@ reinforcement_learning/
 
 ### Training Single Agents
 
-**Train Double Q-learning** (200K episodes, baseline reward):
+**Train Double Q-learning** (500K episodes, baseline reward):
 
 ```bash
 uv run python -m src.run \
   --algo doubleq \
   --reward r0 \
-  --train_episodes 200000 \
+  --train_episodes 500000 \
   --eval_episodes 20000 \
   --seed 0
 ```
 
-**Train A2C-GAE** (300K steps, baseline reward):
+**Train A2C-GAE** (500K steps, baseline reward):
 
 ```bash
 uv run python -m src.run \
   --algo a2c \
   --reward r0 \
-  --train_steps 300000 \
+  --train_steps 500000 \
   --rollout_steps 256 \
   --eval_episodes 20000 \
   --seed 0
@@ -93,22 +84,7 @@ Results are saved to `results/<algo>_<reward>_seed<N>_<timestamp>/`:
 - `metrics.csv` - Training and evaluation metrics
 - `figures/policy_*.png` - Policy visualization heatmaps
 
-## Course Project Notes (Scope + What To Check)
-
-This repository is set up to be "good for project purposes" rather than production-ready.
-If you are grading or presenting the project, these are the key points to verify:
-
-- Reproducibility: all scripts take `--seed` and save `config.json` per run.
-- Fair evaluation: evaluation always uses true (unshaped) rewards.
-- Reward shaping: includes baseline and two penalties for shorter or safer play.
-- Evidence: training logs (`metrics.csv`), policy heatmaps, and aggregate reports in `analysis/`.
-- Minimal runtime: small runs in the Quick Start finish quickly; longer runs are optional.
-
-If you already ran experiments, point reviewers to:
-- `results/` for raw run outputs
-- `analysis/` for summaries and figures
-
-Current best result (from `analysis/report.md` in this repo):
+Current best result:
 - **A2C with r1** (mean eval return -0.0509), slightly ahead of DoubleQ r1 (-0.0528)
 
 ### Reward Shaping Modes
@@ -128,7 +104,7 @@ uv run python -m src.run \
   --algo doubleq \
   --reward r1 \
   --step_penalty 0.02 \
-  --train_episodes 200000
+  --train_episodes 500000
 ```
 
 **Note**: All evaluations use the true (unshaped) reward for unbiased performance measurement.
@@ -143,7 +119,7 @@ Explores a predefined grid of hyperparameters across 3 random seeds:
 uv run python -m src.tune \
   --algo doubleq \
   --reward r0 \
-  --episodes 150000 \
+  --episodes 500000 \
   --eval_episodes 20000
 ```
 
@@ -161,7 +137,7 @@ Samples random configurations with log-uniform learning rate sampling:
 uv run python -m src.tune \
   --algo a2c \
   --reward r0 \
-  --steps 200000 \
+  --steps 500000 \
   --rollout_steps 256 \
   --trials 12 \
   --eval_episodes 20000
@@ -236,15 +212,6 @@ A **policy gradient** method that learns both a policy (actor) and value functio
 - Sensitive to hyperparameters
 - Requires more tuning than tabular methods
 
-## Common Options
-
-### Environment Variations
-
-```bash
---natural       # Natural blackjack: blackjack pays 1.5x (default: 1.0x)
---sab          # Show actual dealer card instead of value
-```
-
 ### Double Q-learning
 
 ```bash
@@ -253,7 +220,7 @@ A **policy gradient** method that learns both a policy (actor) and value functio
 --eps_start 1.0               # Initial epsilon
 --eps_end 0.05                # Final epsilon
 --eps_decay_episodes 100000   # Decay duration
---train_episodes 200000       # Training episodes
+--train_episodes 500000       # Training episodes
 --eval_every_episodes 25000   # Evaluation frequency
 ```
 
@@ -268,7 +235,7 @@ A **policy gradient** method that learns both a policy (actor) and value functio
 --max_grad_norm 0.5        # Gradient clipping
 --hidden1 128              # First hidden layer size
 --hidden2 128              # Second hidden layer size
---train_steps 300000       # Total training steps
+--train_steps 500000       # Total training steps
 --rollout_steps 256        # Steps per rollout (batch size)
 --eval_every_updates 10    # Evaluation frequency
 --device cpu               # Device (cpu or cuda)
