@@ -119,6 +119,7 @@ def train_a2c(
     eval_episodes: int,
     eval_every: int,
     output_dir: Path,
+    checkpoint_path: Path | None = None,  # NEW
 ) -> None:
     """Train an A2C-GAE agent on Blackjack.
 
@@ -135,6 +136,8 @@ def train_a2c(
         eval_episodes: Number of episodes to run during each evaluation.
         eval_every: Evaluate every N updates during training.
         output_dir: Directory where results will be saved.
+        checkpoint_path: Optional path to save final trained model checkpoint.
+            If None, saves to output_dir / "checkpoint_a2c.pt".
     """
     set_global_seeds(seed)
     environment = make_env(seed=seed, reward_cfg=reward_config, **env_kwargs)
@@ -190,6 +193,13 @@ def train_a2c(
 
     environment.close()
 
+    # Save checkpoints
+    if checkpoint_path is None:
+        checkpoint_path = output_dir / "checkpoint_a2c.pt"
+    # Ensure parent dir exists (in case user passes e.g. checkpoints/...)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    agent.save(str(checkpoint_path))
+
     # Save policy visualization heatmaps
     figures_dir = ensure_dir(output_dir / "figures")
     plot_policy_heatmaps(
@@ -208,7 +218,7 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--algo", choices=["doubleq", "a2c"], required=True)
-    parser.add_argument("--reward", choices=["r0", "r1", "r2", "r3"], default="r0")
+    parser.add_argument("--reward", choices=["r0", "r1", "r2"], default="r0")
     parser.add_argument("--seed", type=int, default=0)
 
     # Environment flags
@@ -246,6 +256,9 @@ def main() -> None:
 
     # Output directory
     parser.add_argument("--outdir", type=str, default="results")
+
+    # Optional checkpoint output (for A2C; ignored for DoubleQ)
+    parser.add_argument("--checkpoint", type=str, default="")
 
     args = parser.parse_args()
 
@@ -295,6 +308,9 @@ def main() -> None:
             hidden_sizes=(args.hidden1, args.hidden2),
             device=args.device,
         )
+
+        ckpt_path = Path(args.checkpoint) if args.checkpoint else None
+
         train_a2c(
             seed=args.seed,
             reward_config=reward_config,
@@ -305,6 +321,7 @@ def main() -> None:
             eval_episodes=args.eval_episodes,
             eval_every=args.eval_every_updates,
             output_dir=run_dir,
+            checkpoint_path=ckpt_path,
         )
 
 

@@ -83,9 +83,7 @@ def collect_rollout(
 
     for _ in range(rollout_steps):
         observation_encoded = obs_to_onehot(observation)
-        action, log_probability, value_estimate, entropy = agent.act(
-            observation_encoded, train=True
-        )
+        action, log_probability, value_estimate, _ = agent.act(observation_encoded, train=True)
 
         next_observation, reward, terminated, truncated, info = environment.step(action)
         episode_done = terminated or truncated

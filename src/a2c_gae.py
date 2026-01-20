@@ -271,8 +271,12 @@ class A2CGAEAgent:
         nn.utils.clip_grad_norm_(self.actor_critic_network.parameters(), self.config.max_grad_norm)
         self.optimizer.step()
 
-        # Compute approximate KL divergence for monitoring
-        approximate_kl = (old_log_probabilities - new_log_probabilities).mean().abs().item()
+        # Compute approximate KL divergence for monitoring (post-update)
+        with torch.no_grad():
+            post_logits, _ = self.actor_critic_network(observations)
+            post_distribution = torch.distributions.Categorical(logits=post_logits)
+            post_log_probabilities = post_distribution.log_prob(actions)
+            approximate_kl = (old_log_probabilities - post_log_probabilities).mean().abs().item()
 
         return {
             "loss": float(total_loss.item()),

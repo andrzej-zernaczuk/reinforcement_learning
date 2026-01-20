@@ -1,0 +1,8 @@
+{
+  "alpha": 0.05,
+  "eps_decay_episodes": 50000,
+  "eps_end": 0.05,
+  "eps_start": 1.0,
+  "gamma": 0.95,
+  "mean_eval_return": -0.05065
+}

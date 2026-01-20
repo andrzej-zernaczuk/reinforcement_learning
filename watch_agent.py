@@ -197,7 +197,7 @@ def train_a2c(
 
         for _ in range(num_steps):
             observation_encoded = obs_to_onehot(observation)
-            action, log_probability, value_estimate, entropy = agent.act(
+            action, log_probability, value_estimate, _ = agent.act(
                 observation_encoded, train=True
             )
             next_observation, reward, terminated, truncated, info = environment.step(action)
@@ -409,7 +409,7 @@ def main() -> None:
     """
     argument_parser = argparse.ArgumentParser()
     argument_parser.add_argument("--algo", choices=["doubleq", "a2c"], required=True)
-    argument_parser.add_argument("--reward", choices=["r0", "r1", "r2", "r3"], default="r0")
+    argument_parser.add_argument("--reward", choices=["r0", "r1", "r2"], default="r0")
     argument_parser.add_argument("--seed", type=int, default=0)
     argument_parser.add_argument("--natural", action="store_true")
     argument_parser.add_argument("--sab", action="store_true")

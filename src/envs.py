@@ -23,13 +23,11 @@ class RewardConfig:
             - "r0": No shaping (use original environment rewards)
             - "r1": Step penalty (subtract step_penalty on non-terminal steps)
             - "r2": Bust penalty (subtract bust_penalty on terminal losses)
-            - "r3": Potential-based shaping using player hand value
         step_penalty: Penalty subtracted from reward at each non-terminal step.
             Used only in mode "r1". Encourages shorter episodes.
         bust_penalty: Additional penalty for losing (including busting).
             Used only in mode "r2". Discourages risky play.
-        gamma: Discount factor used in potential-based shaping (mode "r3").
-            Also used as the standard RL discount factor in training.
+        gamma: Discount factor used as the standard RL discount factor in training.
     """
 
     mode: str = "r0"
@@ -49,13 +47,6 @@ class RewardShapingWrapper(gym.Wrapper):
         - r0: reward' = reward (no change)
         - r1: reward' = reward - step_penalty (on non-terminal steps)
         - r2: reward' = reward - bust_penalty (on terminal losses)
-        - r3: reward' = reward + gamma * Φ(s') - Φ(s) (potential-based)
-            where Φ(s) = player_sum / 21.0
-
-    Potential-based shaping (r3) is guaranteed to preserve optimal policies
-    according to the theorem by Ng et al. (1999), as long as Φ(terminal) = 0
-    (which is satisfied since terminal states don't contribute to bootstrapping).
-
     Args:
         env: Base Gymnasium environment to wrap.
         reward_config: Configuration specifying the reward shaping mode and parameters.
@@ -66,25 +57,6 @@ class RewardShapingWrapper(gym.Wrapper):
         super().__init__(env)
         self.reward_config = reward_config
         self._last_observation = None
-
-    @staticmethod
-    def _compute_potential(observation: tuple) -> float:
-        """Compute potential function for potential-based reward shaping.
-
-        The potential function Φ(s) estimates how "good" a state is. For Blackjack,
-        we use the player's hand value normalized by 21 (the target value).
-        Higher hand values (up to 21) are considered better states.
-
-        Formula: Φ(s) = player_sum / 21.0
-
-        Args:
-            observation: Blackjack observation tuple (player_sum, dealer_upcard, usable_ace).
-
-        Returns:
-            Potential value in range [0.0, 1.0+] where higher is better.
-        """
-        player_sum = float(observation[0])
-        return player_sum / 21.0
 
     def reset(self, **kwargs):
         """Reset the environment and store the initial observation.
@@ -131,16 +103,6 @@ class RewardShapingWrapper(gym.Wrapper):
             if episode_done and true_reward < 0:
                 shaped_reward = shaped_reward - float(self.reward_config.bust_penalty)
 
-        elif mode == "r3":
-            # Potential-based shaping: r' = r + gamma * Φ(s') - Φ(s)
-            potential_current_state = self._compute_potential(self._last_observation)
-            potential_next_state = self._compute_potential(observation)
-            shaped_reward = (
-                shaped_reward
-                + float(self.reward_config.gamma) * potential_next_state
-                - potential_current_state
-            )
-
         # mode "r0" leaves shaped_reward unchanged
 
         # Store both rewards in info for evaluation
@@ -162,8 +124,8 @@ def make_env(
     """Create a Blackjack environment with optional reward shaping.
 
     Creates and configures a Gymnasium Blackjack environment. The wrapper ordering
-    is important: RecordEpisodeStatistics must come before RewardShapingWrapper
-    to ensure episode statistics reflect the shaped rewards used during training.
+    is important: RewardShapingWrapper must come before RecordEpisodeStatistics
+    so episode statistics reflect the shaped rewards used during training.
 
     Args:
         seed: Random seed for environment reproducibility.
@@ -182,10 +144,10 @@ def make_env(
     environment = gym.make("Blackjack-v1", natural=natural, sab=sab)
     environment.reset(seed=seed)
 
-    if record_stats:
-        environment = gym.wrappers.RecordEpisodeStatistics(environment)
-
     if reward_cfg is not None:
         environment = RewardShapingWrapper(environment, reward_cfg)
+
+    if record_stats:
+        environment = gym.wrappers.RecordEpisodeStatistics(environment)
 
     return environment

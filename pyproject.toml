@@ -5,7 +5,7 @@ description = "Advanced Reinforcement Learning on Gymnasium Blackjack (Double Q-
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "gymnasium>=1.2.3",
+    "gymnasium[toy-text]>=1.2.3",
     "matplotlib>=3.10.8",
     "numpy>=2.4.1",
     "pandas>=2.3.3",
