@@ -1,21 +1,21 @@
-#!/usr/bin/env bash
+
 set -euo pipefail
 
 EVAL_EPISODES=20000
 
-# Consistent 500k training budget
+# 500k training budget
 DQ_EPISODES=500000
 A2C_STEPS=500000
 A2C_ROLLOUT=256
 
-# ---- Tuned DoubleQ params ----
+# Tuned DoubleQ params
 DQ_ALPHA=0.05
 DQ_GAMMA=0.95
 DQ_EPS_START=1.0
 DQ_EPS_END=0.05
 DQ_EPS_DECAY=50000
 
-# ---- Tuned A2C params ----
+# Tuned A2C params
 A2C_LR=0.0010948770705738267
 A2C_GAMMA=0.95
 A2C_GAE_LAMBDA=0.97
