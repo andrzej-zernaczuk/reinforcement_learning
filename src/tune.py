@@ -18,7 +18,7 @@ from typing import Any
 
 import gymnasium as gym
 from gymnasium.spaces import Discrete
-from tqdm import tqdm  # type: ignore[import-untyped]
+from tqdm import tqdm
 
 from .a2c_gae import A2CConfig, A2CGAEAgent
 from .doubleq import DoubleQAgent, DoubleQConfig
